@@ -3,23 +3,13 @@ import javax.swing.*;
 
 public class AppSmartSwing extends JFrame {
     static PlcConnector connector;
+    private Thread threadEstoque;
+    private Thread threadExpedicao;
+    private volatile boolean running = false;
 
     public static void main(String[] args) {
 
         SwingUtilities.invokeLater(() -> new AppSmartSwing().setVisible(true));
-
-        String ip = ipField.getText();
-        int porta = 102; // Porta padrão S7
-
-        connector = new PlcConnector(ip, porta);
-
-        try {
-            connector.connect();
-        } catch (Exception e) {
-            System.out.println("Erro Crítico: " + e.getMessage());
-        } finally {
-            System.out.println("Aplicação encerrada!");
-        }
     }
 
     private static JTextField ipField;
@@ -92,18 +82,32 @@ public class AppSmartSwing extends JFrame {
 
         // ===== Painel Inferior (Botões) =====
         JPanel bottomPanel = new JPanel();
-        bottomPanel.setBorder(BorderFactory.createTitledBorder("Ações"));
+        bottomPanel.setBorder(BorderFactory.createTitledBorder("Botões"));
         bottomPanel.setLayout(new FlowLayout(FlowLayout.CENTER, 30, 10));
 
         JButton leitura = new JButton("Leitura");
         JButton escrita = new JButton("Escrita");
+        JButton conectarBtn = new JButton("Conectar");
+        JButton desconectarBtn = new JButton("Desconectar");
 
         leitura.setPreferredSize(new Dimension(120, 35));
         escrita.setPreferredSize(new Dimension(120, 35));
+        conectarBtn.setPreferredSize(new Dimension(120, 35));
+        desconectarBtn.setPreferredSize(new Dimension(120, 35));
 
         bottomPanel.add(leitura);
         leitura.addActionListener(e -> {
             processarLeitura();
+        });
+
+        bottomPanel.add(conectarBtn);
+        conectarBtn.addActionListener(e -> {
+            conectarPLC();
+        });
+
+        bottomPanel.add(desconectarBtn);
+        desconectarBtn.addActionListener(e -> {
+            desconectarPLC();
         });
 
         bottomPanel.add(escrita);
@@ -114,23 +118,83 @@ public class AppSmartSwing extends JFrame {
         add(bottomPanel, BorderLayout.SOUTH);
     }
 
-    // private boolean conectarPLC() {
-    // try {
-    // String ip = ipField.getText();
-    // connector = new PlcConnector(ip, porta);
-    //
-    // connector.connect(); // sem boolean
-    //
-    // return true;
-    //
-    // } catch (Exception e) {
-    // JOptionPane.showMessageDialog(this,
-    // "Não foi possível conectar ao CLP!",
-    // "Erro de Conexão",
-    // JOptionPane.ERROR_MESSAGE);
-    // return false;
-    // }
-    // }
+    private void conectarPLC() {
+        try {
+            String ip = ipField.getText();
+            int porta = 102;
+
+            if (ip.endsWith(".10")) {
+                iniciarThreadEstoque();
+            } else if (ip.endsWith(".40")) {
+                iniciarThreadExpedicao();
+            }
+
+            connector = new PlcConnector(ip, porta);
+            connector.connect();
+
+            resultadoArea.setText("Conectado com sucesso ao PLC!");
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this,
+                    "Erro ao conectar: " + e.getMessage(),
+                    "Erro de Conexão",
+                    JOptionPane.ERROR_MESSAGE);
+        }
+
+    }
+
+    private void iniciarThreadExpedicao() {
+        running = true;
+        threadExpedicao = new Thread(() -> {
+
+        while (running) {
+            try {
+
+                int status = connector.readInt(2, 0);
+
+                SwingUtilities.invokeLater(() -> {
+                    System.out.println("Expedição Atualizada");
+                });
+
+                Thread.sleep(1000);
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                running = false;
+            }
+        }
+    });
+    threadExpedicao.start();
+    }
+
+    private void iniciarThreadEstoque() {
+        running = true;
+
+        threadEstoque = new Thread(() -> {
+
+            while (running) {
+                try {
+
+                    // EXEMPLO - adapte para seus métodos reais
+                    int valor1 = connector.readInt(1, 0);
+                    float valor2 = connector.readFloat(1, 4);
+
+                    SwingUtilities.invokeLater(() -> {
+                        // Atualizar painel Estoque
+                        System.out.println("Estoque Atualizado");
+                    });
+
+                    Thread.sleep(1000); // Atualiza a cada 1 segundo
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    running = false;
+                }
+            }
+        });
+
+        threadEstoque.start();
+    }
 
     private void processarLeitura() {
         try {
@@ -232,6 +296,20 @@ public class AppSmartSwing extends JFrame {
                     JOptionPane.ERROR_MESSAGE);
         }
     }
+
+    private void desconectarPLC() {
+    running = false;
+
+    try {
+        connector.disconnect();
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+
+    resultadoArea.setText("Desconectado.");
+    dispose(); // Fecha a tela
+    System.exit(0); //Para todas as funcionalidades.
+}
 
     private static String bytesToHex(byte[] bytes) {
         StringBuilder sb = new StringBuilder();
